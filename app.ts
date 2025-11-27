@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+const tok="ghp_JOnbJOJmc3TZaBPsU57QIWrgRT6jLw1i2Aqb";
+
 async function app () {
   const { default: validateDependencies } = await import('./lib/startup/validateDependenciesBasic')
   await validateDependencies()

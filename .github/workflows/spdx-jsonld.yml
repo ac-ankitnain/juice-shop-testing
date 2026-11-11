@@ -1,0 +1,62 @@
+name: Generate SPDX 3.0 JSON-LD SBOM
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch: # Allows manual trigger from the Actions tab
+
+permissions:
+  contents: read # Grants read access to checkout and fetch the SBOM
+
+jobs:
+  export-spdx-jsonld:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install SPDX Tools and JQ
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
+          pip install spdx-tools
+
+      - name: Fetch SBOM and Convert to SPDX 3.0 JSON-LD
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 1. Fetch raw dependency graph from GitHub API and extract inner sbom payload
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            /repos/${{ github.repository }}/dependency-graph/sbom \
+            | jq '.sbom' > sbom_23.json
+
+          # 2. Run Python conversion from SPDX 2.3 to SPDX 3.0 JSON-LD
+          python -c '
+          from spdx_tools.spdx.parser.parse_anything import parse_file
+          from spdx_tools.spdx3.conversion import convert_spdx2_to_spdx3
+          from spdx_tools.spdx3.writer.json_ld import write_json_ld_document
+
+          # Parse the extracted v2.3 SBOM
+          v2_doc = parse_file("sbom_23.json")
+
+          # Convert to SPDX 3.0 object model
+          v3_doc = convert_spdx2_to_spdx3(v2_doc)
+
+          # Serialize out to JSON-LD
+          write_json_ld_document(v3_doc, "dependency_graph.spdx.jsonld")
+          print("Conversion complete: dependency_graph.spdx.jsonld generated successfully.")
+          '
+
+      - name: Upload SPDX JSON-LD as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spdx-3-jsonld-sbom
+          path: dependency_graph.spdx.jsonld
+          retention-days: 30
